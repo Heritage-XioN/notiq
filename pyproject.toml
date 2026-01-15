@@ -1,0 +1,14 @@
+[project]
+name = "notiq"
+version = "0.0.1"
+description = "Notification, analytics and job queue system. currently in planning phase"
+readme = "README.md"
+authors = [
+    { name = "HERITAGE-XION", email = "iheritage934@gmail.com" }
+]
+requires-python = ">=3.14"
+dependencies = []
+
+[build-system]
+requires = ["uv_build>=0.9.21,<0.10.0"]
+build-backend = "uv_build"
