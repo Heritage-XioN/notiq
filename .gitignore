@@ -29,3 +29,6 @@ coverage.xml
 
 # ============== Linting ==============
 .ruff_cache/
+
+
+example/
