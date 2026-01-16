@@ -3,6 +3,8 @@ import time
 from collections.abc import Callable
 from typing import ParamSpec, TypeVar
 
+from notiq.monitoring.metrics import REQUEST_COUNT, REQUEST_LATENCY
+
 P = ParamSpec("P")  # captures the parameters of the user's function (args/kwargs)
 R = TypeVar("R")  # captures the return type of the user's function
 
@@ -20,27 +22,27 @@ def monitor(metric_name: str) -> Callable[[Callable[P, R]], Callable[P, R]]:
         # The wrapper that replaces the user's function
         @functools.wraps(func)  # capures wrapped func/method metadata
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
-            print(f"--- [Notiq] Starting: {metric_name} ---")
-            start_time = time.perf_counter()
+            start_time: float = time.perf_counter()
 
             try:
                 # Execute the actual user function
                 result = func(*args, **kwargs)
+
+                # Record Success
+                REQUEST_COUNT.labels(function_name=metric_name, status="success").inc()
+
                 return result
             except Exception as e:
-                print(f"--- [Notiq] Error in {metric_name}: {e} ---")
+                # Record Failure
+                REQUEST_COUNT.labels(function_name=metric_name, status="error").inc()
                 # re-raise, exception so it can be caught by the user
                 raise e
             finally:
                 # This runs whether the function succeeds or fails
-                end_time = time.perf_counter()
-                duration = end_time - start_time
-                print(
-                    f"--- [Notiq] Finished: {metric_name} | Time: {duration:.4f}s ---"
-                )
+                end_time: float = time.perf_counter()
+                duration: float = end_time - start_time
 
-                # TODO: Later, we will add:
-                # prometheus_client.histogram(metric_name).observe(duration)
+                REQUEST_LATENCY.labels(function_name=metric_name).observe(duration)
 
         return wrapper
 
