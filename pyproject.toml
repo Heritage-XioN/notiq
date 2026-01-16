@@ -12,3 +12,40 @@ dependencies = []
 [build-system]
 requires = ["uv_build>=0.9.21,<0.10.0"]
 build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "mypy>=1.19.1",
+    "pre-commit>=4.5.1",
+    "ruff>=0.14.13",
+]
+
+# --- RUFF CONFIGURATION (Linter & Formatter) ---
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+# E/W = pycodestyle (standard errors)
+# F = pyflakes (unused imports, variables)
+# I = isort (import sorting)
+# B = flake8-bugbear (common bugs)
+# UP = pyupgrade (modernize syntax)
+select = ["E", "W", "F", "I", "B", "UP"]
+ignore = []
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+# --- MYPY CONFIGURATION (Type Checker) ---
+[tool.mypy]
+strict = true
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+
+# If a library doesn't have type hints, ignore it here:
+# [[tool.mypy.overrides]]
+# module = "some_untyped_lib.*"
+# ignore_missing_imports = true

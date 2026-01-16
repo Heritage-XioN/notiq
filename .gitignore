@@ -8,3 +8,24 @@ wheels/
 
 # Virtual environments
 .venv
+
+# ============== IDE / Editor ==============
+.vscode/
+.idea/
+*.swp
+*.swo
+.qodo/
+
+# ============== Testing ==============
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+*.cover
+
+# ============== Type Checking ==============
+.mypy_cache/
+.pyright/
+
+# ============== Linting ==============
+.ruff_cache/
