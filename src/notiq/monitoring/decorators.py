@@ -5,6 +5,7 @@ from typing import ParamSpec, TypeVar
 
 from notiq.monitoring.loggers import Logger
 from notiq.monitoring.metrics import REQUEST_COUNT, REQUEST_LATENCY
+from notiq.monitoring.validation import validate_metric_name
 
 P = ParamSpec("P")  # captures the parameters of the user's function (args/kwargs)
 R = TypeVar("R")  # captures the return type of the user's function
@@ -18,9 +19,15 @@ def monitor(
 
     Args:
         metric_name: The label used for logging and Prometheus metrics.
+            Must match Prometheus naming: [a-zA-Z_][a-zA-Z0-9_]* (max 64 chars).
         file_output: controls writing logs to a file (./logs/metric_name.log)
         json_serialize: controls serializing log output for log file.
+
+    Raises:
+        ValueError: If metric_name doesn't match Prometheus naming conventions.
     """
+    # Validate metric_name early to prevent cardinality attacks
+    validate_metric_name(metric_name)
 
     # The decorator func
     def decorator(func: Callable[P, R]) -> Callable[P, R]:

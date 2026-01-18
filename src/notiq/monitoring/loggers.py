@@ -5,6 +5,8 @@ import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
+from notiq.monitoring.validation import sanitize_log_filename
+
 
 # --- 1. Define the JSON Formatter ---
 class JsonFormatter(logging.Formatter):
@@ -86,7 +88,9 @@ class Logger:
         if self.file_output:
             # hndles creating log directory if it doesn't exist
             self.log_dir.mkdir(parents=True, exist_ok=True)
-            file_output = self.log_dir / f"{self.logger_name}.log"
+            # Sanitize filename to prevent path traversal attacks
+            safe_filename = sanitize_log_filename(self.logger_name)
+            file_output = self.log_dir / f"{safe_filename}.log"
             # File Handler (RotatingFileHandler)
             # Rotates files so they don't consume infinite disk space.
             # maxBytes=5MB, backupCount=3 (keeps 3 old files)
