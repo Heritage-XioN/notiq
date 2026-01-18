@@ -22,13 +22,13 @@ def monitor(
         json_serialize: controls serializing log output for log file.
     """
 
-    # initialise logger instance
-    log = Logger(
-        metric_name, file_output=file_output, json_serialize=json_serialize
-    ).setup()
-
     # The decorator func
     def decorator(func: Callable[P, R]) -> Callable[P, R]:
+        # initialise logger instance
+        log = Logger(
+            metric_name, file_output=file_output, json_serialize=json_serialize
+        ).setup()
+
         # The wrapper that replaces the user's function
         @functools.wraps(func)  # capures wrapped func/method metadata
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
