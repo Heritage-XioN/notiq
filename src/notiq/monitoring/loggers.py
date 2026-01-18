@@ -1,8 +1,10 @@
 import datetime
 import json
 import logging
+import socket
 import sys
 import threading
+from functools import lru_cache
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -32,11 +34,19 @@ class JsonFormatter(logging.Formatter):
             # Contextual data for production observability
             "process_id": record.process,
             "thread_name": record.threadName,
+            "hostname": get_cached_system_hostname(),
         }
         if record.exc_info:
             log_record["exception"] = self.formatException(record.exc_info)
 
         return json.dumps(log_record)
+
+
+# maxsize=1 is sufficient since the system hostname rarely changes
+@lru_cache(maxsize=1)
+def get_cached_system_hostname() -> str:
+    """Returns the local system hostname, cached for efficiency."""
+    return socket.gethostname()
 
 
 class Logger:
