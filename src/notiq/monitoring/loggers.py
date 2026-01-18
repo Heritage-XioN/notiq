@@ -2,27 +2,36 @@ import datetime
 import json
 import logging
 import sys
+import threading
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 from notiq.monitoring.validation import sanitize_log_filename
+
+# Thread lock for safe handler setup
+_setup_lock = threading.Lock()
 
 
 # --- 1. Define the JSON Formatter ---
 class JsonFormatter(logging.Formatter):
     """
     Formatter that outputs JSON strings after parsing the LogRecord.
+    Uses UTC timestamps for consistency across distributed systems.
     """
 
     def format(self, record: logging.LogRecord) -> str:
         log_record = {
-            "timestamp": datetime.datetime.fromtimestamp(record.created).isoformat(),
+            "timestamp": datetime.datetime.fromtimestamp(
+                record.created, tz=datetime.UTC
+            ).isoformat(),
             "name": record.name,
             "level": record.levelname,
             "message": record.getMessage(),
             "module": record.module,
             "line": record.lineno,
-            # Add 'extra' fields if they exist
+            # Contextual data for production observability
+            "process_id": record.process,
+            "thread_name": record.threadName,
         }
         if record.exc_info:
             log_record["exception"] = self.formatException(record.exc_info)
@@ -36,8 +45,10 @@ class Logger:
 
     Args:
         logger_name (str): The name of the logger (usually __name__).
-        log_dir (str): Path to the log directory.
+        log_dir (Path): Path to the log directory.
         level (int): The logging level (e.g., logging.DEBUG, logging.INFO).
+        file_output (bool): Whether to enable file logging.
+        json_serialize (bool): Whether to use JSON format for file logs.
 
     Returns:
         Configured logger instance.
@@ -62,48 +73,83 @@ class Logger:
         self.logger.setLevel(self.level)
 
     def setup(self) -> logging.Logger:
-        # --- Prevent Duplicate Handlers (Crucial!) ---
-        # If the logger already has handlers, it means it was already set up.
-        # We return it immediately to avoid duplicate logs.
-        if self.logger.handlers:
-            return self.logger
+        """
+        Configure logger handlers in a thread-safe manner.
+        Idempotent: safe to call multiple times.
+        """
+        # Thread-safe handler setup to prevent race conditions
+        with _setup_lock:
+            return self._setup_handlers()
 
-        # --- implement logger handlers ---
-        # Console Handler (StreamHandler)
-        console_handler = logging.StreamHandler(sys.stdout)
-        # Console: simple and readable
-        console_formatter = logging.Formatter(
-            "%(asctime)s - %(levelname)s - %(message)s", datefmt="%H:%M:%S"
+    def _setup_handlers(self) -> logging.Logger:
+        """Internal method to configure handlers (called under lock)."""
+        # Detect existing handlers to keep setup idempotent
+        has_console = any(
+            isinstance(h, logging.StreamHandler)
+            and not isinstance(h, RotatingFileHandler)
+            for h in self.logger.handlers
         )
-        console_handler.setFormatter(console_formatter)
-        console_handler.setLevel(self.level)
-        # Add Console Handler to Logger
-        self.logger.addHandler(console_handler)
+        has_file = any(isinstance(h, RotatingFileHandler) for h in self.logger.handlers)
 
-        # File: detailed (includes file name and line number)
-        file_formatter = logging.Formatter(
-            "%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s"  # noqa: E501
-        )
-
-        if self.file_output:
-            # hndles creating log directory if it doesn't exist
-            self.log_dir.mkdir(parents=True, exist_ok=True)
-            # Sanitize filename to prevent path traversal attacks
-            safe_filename = sanitize_log_filename(self.logger_name)
-            file_output = self.log_dir / f"{safe_filename}.log"
-            # File Handler (RotatingFileHandler)
-            # Rotates files so they don't consume infinite disk space.
-            # maxBytes=5MB, backupCount=3 (keeps 3 old files)
-            file_handler = RotatingFileHandler(
-                file_output, maxBytes=5 * 1024 * 1024, backupCount=3
+        # --- Console Handler ---
+        if not has_console:
+            console_handler = logging.StreamHandler(sys.stdout)
+            console_formatter = logging.Formatter(
+                "%(asctime)s - %(levelname)s - %(message)s", datefmt="%H:%M:%S"
             )
-            formatter = JsonFormatter() if self.json_serialize else file_formatter
-            file_handler.setFormatter(formatter)
-            file_handler.setLevel(self.level)
-            # Add File Handler to Logger
-            self.logger.addHandler(file_handler)
+            console_handler.setFormatter(console_formatter)
+            console_handler.setLevel(self.level)
+            self.logger.addHandler(console_handler)
 
-        # Don't propagate to root logger to avoid double printing if root is configured
+        # --- File Handler (with error handling) ---
+        if self.file_output and not has_file:
+            self._setup_file_handler()
+
+        # Don't propagate to root logger to avoid double printing
         self.logger.propagate = False
 
         return self.logger
+
+    def _setup_file_handler(self) -> None:
+        """
+        Set up file handler with proper error handling.
+        Gracefully degrades if file logging fails.
+        """
+        try:
+            # Create log directory if it doesn't exist
+            self.log_dir.mkdir(parents=True, exist_ok=True)
+
+            # Sanitize filename to prevent path traversal attacks
+            safe_filename = sanitize_log_filename(self.logger_name)
+            file_path = self.log_dir / f"{safe_filename}.log"
+
+            # File Handler with rotation (5MB, 3 backups)
+            file_handler = RotatingFileHandler(
+                file_path, maxBytes=5 * 1024 * 1024, backupCount=3
+            )
+
+            # Choose formatter based on json_serialize setting
+            if self.json_serialize:
+                formatter: logging.Formatter = JsonFormatter()
+            else:
+                formatter = logging.Formatter(
+                    "%(asctime)s - %(name)s - %(levelname)s - "
+                    "%(filename)s:%(lineno)d - %(message)s"
+                )
+
+            file_handler.setFormatter(formatter)
+            file_handler.setLevel(self.level)
+            self.logger.addHandler(file_handler)
+
+        except PermissionError:
+            # Log to stderr but don't crash the application
+            sys.stderr.write(
+                f"[Logger] Permission denied creating log file for '{self.logger_name}'. "  # noqa: E501
+                "File logging disabled.\n"
+            )
+        except OSError as e:
+            # Handles disk full, invalid path, etc.
+            sys.stderr.write(
+                f"[Logger] Failed to create file handler for '{self.logger_name}': {e}. "  # noqa: E501
+                "File logging disabled.\n"
+            )
