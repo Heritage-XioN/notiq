@@ -82,7 +82,11 @@ class MetricBuilder:
             return cast(M, metric_cls(**kwargs))
         except ValueError:
             # Handle duplicate registration under race conditions
-            existing = getattr(self.registry, "_names_to_collectors", {}).get(full_name)
+            # retry lookup before failing.
+            existing_collectors = getattr(self.registry, "_names_to_collectors", {})
+            existing = existing_collectors.get(full_name)
+            if existing is None:
+                raise ValueError(f"Metric '{full_name}' already exists.") from None
             return cast(M, existing)
 
     # prometheus counter metric
