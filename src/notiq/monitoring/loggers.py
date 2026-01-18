@@ -65,7 +65,7 @@ class Logger:
         # --- Prevent Duplicate Handlers (Crucial!) ---
         # If the logger already has handlers, it means it was already set up.
         # We return it immediately to avoid duplicate logs.
-        if self.logger.hasHandlers():
+        if self.logger.handlers:
             return self.logger
 
         # --- implement logger handlers ---
