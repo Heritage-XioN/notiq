@@ -46,12 +46,12 @@ def monitor(
                 REQUEST_COUNT.labels(function_name=metric_name, status="success").inc()
 
                 return result
-            except Exception as e:
+            except Exception:
                 # Record Failure
                 log.exception("error occured", exc_info=True)
                 REQUEST_COUNT.labels(function_name=metric_name, status="error").inc()
-                # re-raise, exception so it can be caught by the user
-                raise e
+                # re-raise to preserve traceback
+                raise
             finally:
                 # This runs whether the function succeeds or fails
                 end_time: float = time.perf_counter()

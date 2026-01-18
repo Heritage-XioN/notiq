@@ -76,9 +76,14 @@ class MetricBuilder:
             # doesn't know for sure if the stored object matches 'metric_cls'.
             return cast(M, existing_collectors[full_name])
 
-        # If not found, create a new one.
-        # The metric automatically registers itself with the registry upon init.
-        return cast(M, metric_cls(**kwargs))
+        # If not found, create a new one with thread-safety.
+        try:
+            # The metric automatically registers itself upon init.
+            return cast(M, metric_cls(**kwargs))
+        except ValueError:
+            # Handle duplicate registration under race conditions
+            existing = getattr(self.registry, "_names_to_collectors", {}).get(full_name)
+            return cast(M, existing)
 
     # prometheus counter metric
     def counter(self) -> Counter:
