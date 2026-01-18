@@ -14,7 +14,7 @@ def monitor(metric_name: str) -> Callable[[Callable[P, R]], Callable[P, R]]:
     A decorator to measure the execution time of a function.
 
     Args:
-        metric_name: The label used for logging (and later Prometheus).
+        metric_name: The label used for logging and Prometheus metrics.
     """
 
     # The decorator func
