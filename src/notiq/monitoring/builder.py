@@ -43,7 +43,7 @@ class MetricBuilder:
     ) -> None:
         self.name = name
         self.documentation = documentation
-        self.labelnames = labelnames
+        self.labelnames = tuple(labelnames)
         self.namespace = namespace
         self.subsystem = subsystem
         self.unit = unit
