@@ -29,3 +29,7 @@ coverage.xml
 
 # ============== Linting ==============
 .ruff_cache/
+
+example/
+logs/
+src/notiq/tasks
