@@ -1,0 +1,273 @@
+import datetime
+import json
+import logging
+import socket
+import sys
+import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
+from functools import lru_cache
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
+from typing import Any
+
+from notiq.monitoring.validation import sanitize_log_filename
+
+
+# maxsize=1 is sufficient since the system hostname rarely changes
+@lru_cache(maxsize=1)
+def get_cached_system_hostname() -> str:
+    """Returns the local system hostname, cached for efficiency."""
+    return socket.gethostname()
+
+
+# Thread lock for safe handler setup
+_setup_lock = threading.Lock()
+
+# Context variable for dynamic log context (thread/async-safe)
+# Note: We use None as default and handle empty dict in accessors
+# to avoid mutable default
+_log_context_var: ContextVar[dict[str, Any] | None] = ContextVar(
+    "log_context", default=None
+)
+
+
+# --- Public API for Log Context ---
+def set_log_context(context: dict[str, Any], *, merge: bool = False) -> None:
+    """
+    Set the log context for the current execution context.
+
+    Args:
+        context: Dictionary of key-value pairs to include in logs.
+        merge: If True, merge with existing context. If False (default), replace.
+
+    Example:
+        set_log_context({"correlation_id": "abc-123", "user_id": 456})
+        set_log_context({"request_id": "xyz"}, merge=True)  # Adds to existing
+    """
+    if merge:
+        current = (_log_context_var.get() or {}).copy()
+        current.update(context)
+        _log_context_var.set(current)
+    else:
+        _log_context_var.set(context.copy())
+
+
+def get_log_context() -> dict[str, Any]:
+    """
+    Get the current log context.
+
+    Returns:
+        A copy of the current context dictionary.
+    """
+    return (_log_context_var.get() or {}).copy()
+
+
+def clear_log_context() -> None:
+    """Clear all log context for the current execution context."""
+    _log_context_var.set(None)
+
+
+@contextmanager
+def log_context(**kwargs: Any) -> Iterator[None]:
+    """
+    Context manager for scoped log context.
+
+    Automatically restores previous context when exiting the scope.
+    Supports nesting — inner contexts merge with outer contexts.
+
+    Example:
+        with log_context(correlation_id="abc-123", user_id=456):
+            await process_payment(100.0)  # Logs include correlation_id and user_id
+
+        # Context is automatically cleared here
+    """
+    # Save current context and create new merged context
+    token = _log_context_var.set({**(_log_context_var.get() or {}), **kwargs})
+    try:
+        yield
+    finally:
+        # Restore previous context
+        _log_context_var.reset(token)
+
+
+# --- JSON Formatter ---
+class JsonFormatter(logging.Formatter):
+    """
+    Formatter that outputs JSON strings after parsing the LogRecord.
+    Uses UTC timestamps for consistency across distributed systems.
+    """
+
+    # Standard LogRecord attributes to ignore
+    RESERVED_ATTRS = {
+        "args",
+        "asctime",
+        "created",
+        "exc_info",
+        "exc_text",
+        "filename",
+        "funcName",
+        "levelname",
+        "levelno",
+        "lineno",
+        "module",
+        "msecs",
+        "msg",
+        "message",
+        "name",
+        "pathname",
+        "process",
+        "processName",
+        "relativeCreated",
+        "stack_info",
+        "thread",
+        "threadName",
+        "taskName",
+    }
+
+    def format(self, record: logging.LogRecord) -> str:
+        record.message = record.getMessage()
+        # Extract dynamic extras
+        extras = {
+            key: value
+            for key, value in record.__dict__.items()
+            if key not in self.RESERVED_ATTRS
+        }
+
+        # log record format
+        log_record = {
+            "timestamp": datetime.datetime.fromtimestamp(
+                record.created, tz=datetime.UTC
+            ).isoformat(),
+            "name": record.name,
+            "level": record.levelname,
+            "message": record.getMessage(),
+            "module": record.module,
+            "line": record.lineno,
+            # Contextual data for production observability
+            "process_id": record.process,
+            "thread_name": record.threadName,
+            "hostname": get_cached_system_hostname(),
+            "context": extras,
+        }
+        if record.exc_info:
+            log_record["exception"] = self.formatException(record.exc_info)
+
+        return json.dumps(log_record)
+
+
+class Logger:
+    """
+    Creates a custom logger instance that writes to both console and a file.
+
+    Args:
+        logger_name (str): The name of the logger (usually __name__).
+        log_dir (Path): Path to the log directory.
+        level (int): The logging level (e.g., logging.DEBUG, logging.INFO).
+        file_output (bool): Whether to enable file logging.
+        json_serialize (bool): Whether to use JSON format for file logs.
+
+    Returns:
+        Configured logger instance.
+    """
+
+    def __init__(
+        self,
+        logger_name: str,
+        log_dir: Path = Path("./logs"),
+        level: int = logging.DEBUG,
+        file_output: bool = False,
+        json_serialize: bool = True,
+    ):
+        self.logger_name = logger_name
+        self.logger: logging.Logger = logging.getLogger(logger_name)
+        self.log_dir: Path = log_dir
+        self.level: int = level
+        self.file_output: bool = file_output
+        self.json_serialize: bool = json_serialize
+
+        # --- Create the Logger instance ---
+        self.logger.setLevel(self.level)
+
+    def setup(self) -> logging.Logger:
+        """
+        Configure logger handlers in a thread-safe manner.
+        Idempotent: safe to call multiple times.
+        """
+        # Thread-safe handler setup to prevent race conditions
+        with _setup_lock:
+            return self._setup_handlers()
+
+    def _setup_handlers(self) -> logging.Logger:
+        """Internal method to configure handlers (called under lock)."""
+        # Detect existing handlers to keep setup idempotent
+        has_console = any(
+            isinstance(h, logging.StreamHandler)
+            and not isinstance(h, RotatingFileHandler)
+            for h in self.logger.handlers
+        )
+        has_file = any(isinstance(h, RotatingFileHandler) for h in self.logger.handlers)
+
+        # --- Console Handler ---
+        if not has_console:
+            console_handler = logging.StreamHandler(sys.stdout)
+            console_formatter = logging.Formatter(
+                "%(asctime)s - %(levelname)s - %(message)s", datefmt="%H:%M:%S"
+            )
+            console_handler.setFormatter(console_formatter)
+            console_handler.setLevel(self.level)
+            self.logger.addHandler(console_handler)
+
+        # --- File Handler (with error handling) ---
+        if self.file_output and not has_file:
+            self._setup_file_handler()
+
+        # Don't propagate to root logger to avoid double printing
+        self.logger.propagate = False
+
+        return self.logger
+
+    def _setup_file_handler(self) -> None:
+        """
+        Set up file handler with proper error handling.
+        Gracefully degrades if file logging fails.
+        """
+        try:
+            # Create log directory if it doesn't exist
+            self.log_dir.mkdir(parents=True, exist_ok=True)
+
+            # Sanitize filename to prevent path traversal attacks
+            safe_filename = sanitize_log_filename(self.logger_name)
+            file_path = self.log_dir / f"{safe_filename}.log"
+
+            # File Handler with rotation (5MB, 3 backups)
+            file_handler = RotatingFileHandler(
+                file_path, maxBytes=5 * 1024 * 1024, backupCount=3
+            )
+
+            # Choose formatter based on json_serialize setting
+            if self.json_serialize:
+                formatter: logging.Formatter = JsonFormatter()
+            else:
+                formatter = logging.Formatter(
+                    "%(asctime)s - %(name)s - %(levelname)s - "
+                    "%(filename)s:%(lineno)d - %(message)s"
+                )
+
+            file_handler.setFormatter(formatter)
+            file_handler.setLevel(self.level)
+            self.logger.addHandler(file_handler)
+
+        except PermissionError:
+            # Log to stderr but don't crash the application
+            sys.stderr.write(
+                f"[Logger] Permission denied creating log file for '{self.logger_name}'. "  # noqa: E501
+                "File logging disabled.\n"
+            )
+        except OSError as e:
+            # Handles disk full, invalid path, etc.
+            sys.stderr.write(
+                f"[Logger] Failed to create file handler for '{self.logger_name}': {e}. "  # noqa: E501
+                "File logging disabled.\n"
+            )
