@@ -25,6 +25,18 @@ dev = [
     "ruff>=0.14.13",
 ]
 
+
+# --- Pyright configuration ---
+[tool.pyright]
+pythonVersion = "3.10"
+typeCheckingMode = "strict"
+reportMissingImports = true
+reportUnknownMemberType = false
+reportMissingTypeStubs = false
+reportUnnecessaryCast = false
+exclude = ["**/tests/**", "**/migrations/**"]
+
+
 # --- RUFF CONFIGURATION (Linter & Formatter) ---
 [tool.ruff]
 line-length = 88
@@ -36,8 +48,11 @@ target-version = "py311"
 # I = isort (import sorting)
 # B = flake8-bugbear (common bugs)
 # UP = pyupgrade (modernize syntax)
-select = ["E", "W", "F", "I", "B", "UP"]
-ignore = []
+select = ["E", "W", "F", "I", "B", "UP", "C4"]
+ignore = [
+    "F401",  # unused import (Pyright covers this)
+    "F841",  # unused variable (Pyright covers this)
+]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -49,6 +64,7 @@ strict = true
 python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
+exclude = "^(tests|migrations)/"
 
 # If a library doesn't have type hints, ignore it here:
 # [[tool.mypy.overrides]]
