@@ -4,24 +4,138 @@ import logging
 import socket
 import sys
 import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from functools import lru_cache
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+from typing import Any
 
 from notiq.monitoring.validation import sanitize_log_filename
+
+
+# maxsize=1 is sufficient since the system hostname rarely changes
+@lru_cache(maxsize=1)
+def get_cached_system_hostname() -> str:
+    """Returns the local system hostname, cached for efficiency."""
+    return socket.gethostname()
+
 
 # Thread lock for safe handler setup
 _setup_lock = threading.Lock()
 
+# Context variable for dynamic log context (thread/async-safe)
+# Note: We use None as default and handle empty dict in accessors
+# to avoid mutable default
+_log_context_var: ContextVar[dict[str, Any] | None] = ContextVar(
+    "log_context", default=None
+)
 
-# --- 1. Define the JSON Formatter ---
+
+# --- Public API for Log Context ---
+def set_log_context(context: dict[str, Any], *, merge: bool = False) -> None:
+    """
+    Set the log context for the current execution context.
+
+    Args:
+        context: Dictionary of key-value pairs to include in logs.
+        merge: If True, merge with existing context. If False (default), replace.
+
+    Example:
+        set_log_context({"correlation_id": "abc-123", "user_id": 456})
+        set_log_context({"request_id": "xyz"}, merge=True)  # Adds to existing
+    """
+    if merge:
+        current = (_log_context_var.get() or {}).copy()
+        current.update(context)
+        _log_context_var.set(current)
+    else:
+        _log_context_var.set(context.copy())
+
+
+def get_log_context() -> dict[str, Any]:
+    """
+    Get the current log context.
+
+    Returns:
+        A copy of the current context dictionary.
+    """
+    return (_log_context_var.get() or {}).copy()
+
+
+def clear_log_context() -> None:
+    """Clear all log context for the current execution context."""
+    _log_context_var.set(None)
+
+
+@contextmanager
+def log_context(**kwargs: Any) -> Iterator[None]:
+    """
+    Context manager for scoped log context.
+
+    Automatically restores previous context when exiting the scope.
+    Supports nesting — inner contexts merge with outer contexts.
+
+    Example:
+        with log_context(correlation_id="abc-123", user_id=456):
+            await process_payment(100.0)  # Logs include correlation_id and user_id
+
+        # Context is automatically cleared here
+    """
+    # Save current context and create new merged context
+    token = _log_context_var.set({**(_log_context_var.get() or {}), **kwargs})
+    try:
+        yield
+    finally:
+        # Restore previous context
+        _log_context_var.reset(token)
+
+
+# --- JSON Formatter ---
 class JsonFormatter(logging.Formatter):
     """
     Formatter that outputs JSON strings after parsing the LogRecord.
     Uses UTC timestamps for consistency across distributed systems.
     """
 
+    # Standard LogRecord attributes to ignore
+    RESERVED_ATTRS = {
+        "args",
+        "asctime",
+        "created",
+        "exc_info",
+        "exc_text",
+        "filename",
+        "funcName",
+        "levelname",
+        "levelno",
+        "lineno",
+        "module",
+        "msecs",
+        "msg",
+        "message",
+        "name",
+        "pathname",
+        "process",
+        "processName",
+        "relativeCreated",
+        "stack_info",
+        "thread",
+        "threadName",
+        "taskName",
+    }
+
     def format(self, record: logging.LogRecord) -> str:
+        record.message = record.getMessage()
+        # Extract dynamic extras
+        extras = {
+            key: value
+            for key, value in record.__dict__.items()
+            if key not in self.RESERVED_ATTRS
+        }
+
+        # log record format
         log_record = {
             "timestamp": datetime.datetime.fromtimestamp(
                 record.created, tz=datetime.UTC
@@ -35,18 +149,12 @@ class JsonFormatter(logging.Formatter):
             "process_id": record.process,
             "thread_name": record.threadName,
             "hostname": get_cached_system_hostname(),
+            "context": extras,
         }
         if record.exc_info:
             log_record["exception"] = self.formatException(record.exc_info)
 
         return json.dumps(log_record)
-
-
-# maxsize=1 is sufficient since the system hostname rarely changes
-@lru_cache(maxsize=1)
-def get_cached_system_hostname() -> str:
-    """Returns the local system hostname, cached for efficiency."""
-    return socket.gethostname()
 
 
 class Logger:
