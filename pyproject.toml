@@ -34,6 +34,7 @@ reportMissingImports = true
 reportUnknownMemberType = false
 reportMissingTypeStubs = false
 reportUnnecessaryCast = false
+reportUnknownVariableType = false
 exclude = ["**/tests/**", "**/migrations/**"]
 
 
@@ -52,6 +53,7 @@ select = ["E", "W", "F", "I", "B", "UP", "C4"]
 ignore = [
     "F401",  # unused import (Pyright covers this)
     "F841",  # unused variable (Pyright covers this)
+    "B007",  # unused loop control variable
 ]
 
 [tool.ruff.format]
@@ -67,6 +69,10 @@ warn_unused_configs = true
 exclude = "^(tests|migrations)/"
 
 # If a library doesn't have type hints, ignore it here:
-# [[tool.mypy.overrides]]
-# module = "some_untyped_lib.*"
-# ignore_missing_imports = true
+[[tool.mypy.overrides]]
+module = "notiq.utils.dicovery"
+disable_error_code = ["attr-defined"]  # Path.walk() is Python 3.12+
+
+[[tool.mypy.overrides]]
+module = "notiq.config"
+disable_error_code = ["misc"]  # pydantic-settings BaseSettings typing issue
