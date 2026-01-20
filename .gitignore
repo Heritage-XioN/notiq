@@ -9,6 +9,9 @@ wheels/
 # Virtual environments
 .venv
 
+# environments
+.env
+
 # ============== IDE / Editor ==============
 .vscode/
 .idea/
@@ -33,4 +36,4 @@ coverage.xml
 
 example/
 logs/
-src/notiq/tasks
+tasks/custom_tasks.py
