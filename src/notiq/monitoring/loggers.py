@@ -138,7 +138,8 @@ class JsonFormatter(logging.Formatter):
         # log record format
         log_record = {
             "timestamp": datetime.datetime.fromtimestamp(
-                record.created, tz=datetime.UTC
+                record.created,
+                tz=datetime.UTC,  # pyright: ignore[reportUnknownArgumentType, reportAttributeAccessIssue]
             ).isoformat(),
             "name": record.name,
             "level": record.levelname,

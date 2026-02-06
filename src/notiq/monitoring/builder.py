@@ -1,4 +1,3 @@
-# src/notiq/monitoring/builder.py
 from collections.abc import Iterable, Sequence
 from typing import Any, TypeVar, cast
 

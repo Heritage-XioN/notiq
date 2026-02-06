@@ -8,10 +8,12 @@ authors = [
 ]
 requires-python = ">=3.14"
 dependencies = [
+    "celery-redbeat>=2.3.3",
     "celery[redis]>=5.6.2",
     "prometheus-client>=0.24.1",
     "pydantic-settings>=2.12.0",
     "sqlmodel>=0.0.31",
+    "tzlocal>=5.3.1",
 ]
 
 [build-system]
@@ -25,6 +27,19 @@ dev = [
     "ruff>=0.14.13",
 ]
 
+
+# --- PYRIGHT CONFIGURATION ---
+[tool.pyright]
+pythonVersion = "3.10"
+typeCheckingMode = "strict"
+reportMissingImports = true
+reportUnknownMemberType = false
+reportMissingTypeStubs = false
+reportUnnecessaryCast = false
+reportUnknownVariableType = false
+exclude = ["**/tests/**", "**/migrations/**"]
+
+
 # --- RUFF CONFIGURATION (Linter & Formatter) ---
 [tool.ruff]
 line-length = 88
@@ -36,8 +51,12 @@ target-version = "py311"
 # I = isort (import sorting)
 # B = flake8-bugbear (common bugs)
 # UP = pyupgrade (modernize syntax)
-select = ["E", "W", "F", "I", "B", "UP"]
-ignore = []
+select = ["E", "W", "F", "I", "B", "UP", "C4"]
+ignore = [
+    "F401",  # unused import (Pyright covers this)
+    "F841",  # unused variable (Pyright covers this)
+    "B007",  # unused loop control variable
+]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -49,8 +68,13 @@ strict = true
 python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
+exclude = "^(tests|migrations)/"
 
 # If a library doesn't have type hints, ignore it here:
-# [[tool.mypy.overrides]]
-# module = "some_untyped_lib.*"
-# ignore_missing_imports = true
+[[tool.mypy.overrides]]
+module = "notiq.utils.dicovery"
+disable_error_code = ["attr-defined"]  # Path.walk() is Python 3.12+
+
+[[tool.mypy.overrides]]
+module = "notiq.config"
+disable_error_code = ["misc"]  # pydantic-settings BaseSettings typing issue
