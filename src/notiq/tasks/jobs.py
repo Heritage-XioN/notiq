@@ -7,9 +7,7 @@ from notiq.monitoring.decorators import monitor
 from notiq.tasks.queue import notiq_task
 
 
-# We reuse your existing tools!
-# This task is automatically Monitored AND runs in the background.
-@notiq_task(bind=True, name="notiq.send_notification")
+@notiq_task(name="notiq.send_notification")
 @monitor(metric_name="task_send_notification")
 def background_notify(self: Task, channel_type: str, message: str) -> str:
     """
@@ -26,7 +24,7 @@ def background_notify(self: Task, channel_type: str, message: str) -> str:
 
 @notiq_task(name="notiq.process_analytics")
 @monitor(metric_name="task_analytics_aggregation")
-def aggregate_analytics(date_str: str) -> dict[str, Any]:
+def aggregate_analytics(self: Task, date_str: str) -> dict[str, Any]:
     """
     Simulates a heavy data aggregation job.
     """

@@ -1,4 +1,5 @@
 # import internal function.
+import logging
 import os
 
 from pydantic import AmqpDsn, RedisDsn, ValidationError
@@ -9,6 +10,8 @@ from notiq.monitoring.decorators import monitor
 from notiq.monitoring.loggers import Logger
 from notiq.tasks.worker import celery_app
 from notiq.utils.dicovery import autodiscover_tasks
+
+logger = logging.getLogger(__name__)
 
 # and expose it publicly.
 # __all__ defines what happens if someone types "from notiq import *"
@@ -104,7 +107,7 @@ def NotiqConfig(
     # Apply broker/backend configuration
     if valid_settings.BROKER_URL:
         celery_app.conf.update(broker_url=str(valid_settings.BROKER_URL))
-        print(f"✅ Notiq connected to broker at: {valid_settings.BROKER_URL}")
+        logger.info("Notiq connected to broker at: %s", valid_settings.BROKER_URL)
 
     if valid_settings.RESULT_BACKEND:
         celery_app.conf.update(result_backend=str(valid_settings.RESULT_BACKEND))
@@ -116,11 +119,12 @@ def NotiqConfig(
         if modules:
             existing = list(celery_app.conf.get("include", []) or [])  # pyright: ignore[reportUnknownArgumentType]
             celery_app.conf.update(include=existing + modules)
-            print(
-                f"✅ Notiq discovered {len(modules)} task module(s) "
-                f"in '{valid_settings.TASK_DIR}'"
+            logger.info(
+                "Notiq discovered %d task module(s) in '%s'",
+                len(modules),
+                valid_settings.TASK_DIR,
             )
         else:
-            print(
-                f"⚠️ Warning: No python task files found in '{valid_settings.TASK_DIR}'"
+            logger.warning(
+                "No python task files found in '%s'", valid_settings.TASK_DIR
             )
