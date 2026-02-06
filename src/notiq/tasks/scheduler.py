@@ -83,10 +83,10 @@ def notiq_scheduler(
         task=task,
         schedule=schedule,
         app=celery_app,
-        args=args,
-        kwargs=kwargs,
+        args=args or (),
+        kwargs=kwargs or {},
         enabled=enabled,
-        options=options,
+        options=options or {},
         **clsargs,
     )
 

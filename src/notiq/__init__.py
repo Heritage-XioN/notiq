@@ -1,5 +1,3 @@
-# import internal function.
-import logging
 import os
 
 from pydantic import AmqpDsn, RedisDsn, ValidationError
@@ -8,14 +6,27 @@ from notiq.config import Config
 from notiq.monitoring.builder import MetricBuilder
 from notiq.monitoring.decorators import monitor
 from notiq.monitoring.loggers import Logger
+from notiq.tasks.queue import notiq_task
+from notiq.tasks.scheduler import notiq_scheduler, notiq_unscheduler
 from notiq.tasks.worker import celery_app
 from notiq.utils.dicovery import autodiscover_tasks
 
-logger = logging.getLogger(__name__)
+log = Logger("notiq_config", json_serialize=False).setup()
+
 
 # and expose it publicly.
 # __all__ defines what happens if someone types "from notiq import *"
-__all__ = ["monitor", "MetricBuilder", "celery_app", "Logger", "NotiqConfig", "Config"]
+__all__ = [
+    "monitor",
+    "MetricBuilder",
+    "celery_app",
+    "Logger",
+    "NotiqConfig",
+    "Config",
+    "notiq_scheduler",
+    "notiq_unscheduler",
+    "notiq_task",
+]
 
 __version__ = "0.0.1"
 
@@ -51,10 +62,10 @@ def _auto_configure_from_env() -> None:
                 existing = list(celery_app.conf.get("include", []) or [])  # pyright: ignore[reportUnknownArgumentType]
                 celery_app.conf.update(include=existing + modules)
 
-    except ValidationError:
+    except ValidationError as e:
         # If validation fails, silently continue with defaults
         # User will get explicit errors when they call NotiqConfig()
-        pass
+        log.warning("Invalid NOTIQ_ environment configuration: %s", e)
 
 
 # Run auto-configuration when the module is imported
@@ -89,11 +100,6 @@ def NotiqConfig(
     Raises:
         ValueError: If BROKER_URL or RESULT_BACKEND are invalid URLs.
     """
-    # Set environment variables for worker processes to pick up
-    os.environ["NOTIQ_TASK_DIR"] = str(task_dir)
-    os.environ["NOTIQ_BROKER_URL"] = str(BROKER_URL)
-    os.environ["NOTIQ_RESULT_BACKEND"] = str(RESULT_BACKEND)
-
     # Validate using the unified Config class
     try:
         valid_settings = Config(
@@ -104,10 +110,15 @@ def NotiqConfig(
     except ValidationError as e:
         raise ValueError(f"Invalid configuration provided: {e}") from e
 
+    # Set environment variables for worker processes to pick up
+    os.environ["NOTIQ_TASK_DIR"] = str(valid_settings.TASK_DIR)
+    os.environ["NOTIQ_BROKER_URL"] = str(valid_settings.BROKER_URL)
+    os.environ["NOTIQ_RESULT_BACKEND"] = str(valid_settings.RESULT_BACKEND)
+
     # Apply broker/backend configuration
     if valid_settings.BROKER_URL:
         celery_app.conf.update(broker_url=str(valid_settings.BROKER_URL))
-        logger.info("Notiq connected to broker at: %s", valid_settings.BROKER_URL)
+        log.info("Notiq connected to broker at: %s", valid_settings.BROKER_URL)
 
     if valid_settings.RESULT_BACKEND:
         celery_app.conf.update(result_backend=str(valid_settings.RESULT_BACKEND))
@@ -119,12 +130,10 @@ def NotiqConfig(
         if modules:
             existing = list(celery_app.conf.get("include", []) or [])  # pyright: ignore[reportUnknownArgumentType]
             celery_app.conf.update(include=existing + modules)
-            logger.info(
+            log.info(
                 "Notiq discovered %d task module(s) in '%s'",
                 len(modules),
                 valid_settings.TASK_DIR,
             )
         else:
-            logger.warning(
-                "No python task files found in '%s'", valid_settings.TASK_DIR
-            )
+            log.warning("No python task files found in '%s'", valid_settings.TASK_DIR)
