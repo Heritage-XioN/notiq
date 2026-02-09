@@ -4,14 +4,13 @@
 ![Python](https://img.shields.io/badge/python-3.14%2B-blue)
 ![License](https://img.shields.io/badge/license-GPL--3.0-green)
 
-A powerful Python library for task scheduling, monitoring, and analytics built on Celery and Redis.
+A powerful Python utility library for task scheduling, monitoring, analytics, and an event driven observer services built on Celery and Redis.
 
 ---
 
 ## Table of Contents
 
 - [Installation](#installation)
-- [Quick Start](#quick-start)
 - [Usage](#usage)
 - [Documentation](#documentation)
 - [Contributing](#contributing)
