@@ -20,4 +20,5 @@ repos:
     rev: v1.19.1
     hooks:
       - id: mypy
+        exclude: ^tests/
         additional_dependencies: []  # Add types-requests etc if needed

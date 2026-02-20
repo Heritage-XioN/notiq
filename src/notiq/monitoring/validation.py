@@ -30,7 +30,7 @@ def validate_metric_name(name: str) -> str:
     Raises:
         ValueError: If the name doesn't match Prometheus naming conventions.
     """
-    if not isinstance(name, str) or not VALID_NAME_PATTERN.match(name):
+    if not isinstance(name, str) or not VALID_NAME_PATTERN.match(name):  # pyright: ignore[reportUnnecessaryIsInstance]
         raise ValueError(
             f"Invalid metric_name '{name}'. "
             "Must be 1-64 characters, start with [a-zA-Z_], "

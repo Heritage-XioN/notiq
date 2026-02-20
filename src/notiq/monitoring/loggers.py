@@ -164,14 +164,14 @@ class Logger:
 
     Args:
         logger_name (str): The name of the logger (usually __name__).
-        log_dir (Path): Path to the log directory.
-        level (int): The logging level (e.g., logging.DEBUG, logging.INFO).
-        file_output (bool): Whether to enable file logging.
-        json_serialize (bool): Whether to use JSON format for file logs.
+        log_dir (Path): Path to the log directory. defaults to "./logs".
+        level (int): The logging level (e.g., logging.DEBUG, logging.INFO). defaults to logging.DEBUG.
+        file_output (bool): Whether to enable file logging. defaults to False.
+        json_serialize (bool): Whether to use JSON format for file logs. defaults to True.
 
     Returns:
         Configured logger instance.
-    """
+    """  # noqa: E501
 
     def __init__(
         self,
