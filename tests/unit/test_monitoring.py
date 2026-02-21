@@ -16,6 +16,7 @@ from notiq.monitoring.validation import sanitize_log_filename, validate_metric_n
 
 
 def test_metrics_builder():
+    # initialize metrics builder
     builder = MetricBuilder(
         name="test_metric",
         documentation="test documentation",
@@ -24,6 +25,8 @@ def test_metrics_builder():
         subsystem="test_subsystem",
         unit="test_unit",
     )
+
+    # verify builder configs are correct
     assert builder.name == "test_metric"
     assert builder.documentation == "test documentation"
     assert builder.labelnames == ("test_label",)
@@ -33,10 +36,13 @@ def test_metrics_builder():
 
 
 def test_metrics_builder_with_defaults():
+    # initialize metrics builder
     builder = MetricBuilder(
         name="test_metric",
         documentation="test documentation",
     )
+
+    # verify builder configs are correct
     assert builder.name == "test_metric"
     assert builder.documentation == "test documentation"
     assert builder.labelnames == ()
@@ -46,6 +52,7 @@ def test_metrics_builder_with_defaults():
 
 
 def test_metrics_builder_methods():
+    # initialize metricbuilder with different metric methods
     counter = MetricBuilder(
         name="test_counter_metric", documentation="test documentation"
     ).counter()
@@ -58,6 +65,8 @@ def test_metrics_builder_methods():
     summary = MetricBuilder(
         name="test_summary_metric", documentation="test documentation"
     ).summary()
+
+    # verify all metric methods are of the same instance as the prometheus methods
     assert isinstance(counter, Counter)
     assert isinstance(gauge, Gauge)
     assert isinstance(histogram, Histogram)
@@ -65,7 +74,10 @@ def test_metrics_builder_methods():
 
 
 def test_loggers():
+    # initialize logger
     logger = Logger("test_logger")
+
+    # verify all default values work
     assert logger.logger_name == "test_logger"
     assert logger.logger == logging.getLogger("test_logger")
     assert logger.log_dir == Path("./logs")
@@ -86,6 +98,7 @@ def test_loggers():
 def test_loggers_with_custom_parameters(
     logger_name: str, log_dir: Path, level: int, file_output: bool, json_serialize: bool
 ):
+    # initialize logger
     logger = Logger(
         logger_name=logger_name,
         log_dir=log_dir,
@@ -93,6 +106,7 @@ def test_loggers_with_custom_parameters(
         file_output=file_output,
         json_serialize=json_serialize,
     )
+    # verify all config values are correct
     assert logger.logger_name == logger_name
     assert logger.logger == logging.getLogger(logger_name)
     assert logger.log_dir == log_dir
@@ -134,6 +148,7 @@ def test_validate_metric_name_with_invalid_name(metric_name: str):
 
 
 def test_metrics_decorator():
+    # add monitoring decorator
     @monitor(metric_name="payment", file_output=True)
     def payment(amount: float):
         # Simulate work
@@ -142,10 +157,12 @@ def test_metrics_decorator():
             raise ValueError("Negative amount")
         return "Success"
 
+    # verify decorated function returns expected output
     assert payment(100) == "Success"
 
 
 def test_metrics_decorator_async():
+    # add monitoring decorator
     @monitor(metric_name="payment", file_output=True)
     async def payment(amount: float):
         # Simulate work
@@ -154,5 +171,7 @@ def test_metrics_decorator_async():
             raise ValueError("Negative amount")
         return "Success"
 
+    # run async function
     val = asyncio.run(payment(100))
+    # verify decorated function returns expected output
     assert val == "Success"
