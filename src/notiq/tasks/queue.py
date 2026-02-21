@@ -12,7 +12,7 @@ T = TypeVar("T", bound=Callable[..., Any])
 def notiq_task(*args: Any, **kwargs: Any) -> Callable[[T], Task]:
     """
     a decorator function to create tasks.
-    any function decorated by this is processed by the celery worker.
+    any function decorated with this decorator is registered as a celery task.
     the notiq_task decorator is a wrapper around the celery.shared_task decorator.
     it adds some default values for the task. which includes:
     - bind: True
@@ -28,8 +28,8 @@ def notiq_task(*args: Any, **kwargs: Any) -> Callable[[T], Task]:
         **kwargs: additional arguments to be passed to the celery task
 
     note:
-        the decorated function will receive the task instance as the first argument.
-        so the decorated function should accept the task instance as the first argument.
+        the decorated function will be receiving the task instance as the first argument.
+        so the decorated function must have the task instance as the first argument.
         this is because we set bind=True in the default values. which means pass the value
         of (self: Task) to the decorated function first before any other arguments.
 

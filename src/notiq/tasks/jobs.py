@@ -14,6 +14,7 @@ def background_notify(self: Task, channel_type: str, message: str) -> str:
     A pre-built background job to send notifications.
     """
     try:
+        # this will be implemented later
         # notifier = NotificationFactory.get_notifier(channel_type)
         # notifier.send(message)
         return f"Sent via {channel_type}"
