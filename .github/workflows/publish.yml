@@ -6,19 +6,19 @@ on:
 
 jobs:
   # The Safety Check
-  # test:
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - uses: astral-sh/setup-uv@v5
-  #     - run: uv python install 3.10
-  #     - run: uv sync --all-extras --dev
-  #     - run: uv run pytest -x
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv python install 3.10
+      - run: uv sync --all-extras --dev
+      - run: uv run pytest -x
 
   # The Publisher
   # This ONLY runs if 'test' passes successfully.
   publish:
-    # needs: test  # <--- The Dependency You Requested
+    needs: test
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
