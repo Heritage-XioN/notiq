@@ -61,9 +61,8 @@ def _auto_configure_from_env() -> None:
                 celery_app.conf.update(include=existing + modules)
 
     except ValidationError as e:
-        # If validation fails, silently continue with defaults
-        # User will get explicit errors when they call NotiqConfig()
-        log.warning("Invalid NOTIQ_ environment configuration: %s", e)
+        # If validation fails raise exception
+        raise ValueError("Invalid configuration provided") from e
 
 
 # Run auto-configuration when the module is imported
