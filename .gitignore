@@ -25,6 +25,7 @@ wheels/
 htmlcov/
 coverage.xml
 *.cover
+coverage_html_report/
 
 # ============== Type Checking ==============
 .mypy_cache/

@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import time
+import warnings
 from pathlib import Path
 
 import pytest
@@ -163,10 +164,10 @@ def test_metrics_decorator():
 
 def test_metrics_decorator_async():
     # add monitoring decorator
-    @monitor(metric_name="payment", file_output=True)
+    @monitor(metric_name="payment_async_test", file_output=True)
     async def payment(amount: float):
         # Simulate work
-        await asyncio.sleep(0.2)
+        await asyncio.sleep(0.1)
         if amount < 0:
             raise ValueError("Negative amount")
         return "Success"
@@ -175,3 +176,58 @@ def test_metrics_decorator_async():
     val = asyncio.run(payment(100))
     # verify decorated function returns expected output
     assert val == "Success"
+
+
+def test_metrics_decorator_propagates_exception():
+    @monitor(metric_name="payment_error_test")
+    def payment(amount: float):
+        if amount < 0:
+            raise ValueError("Negative amount")
+        return "Success"
+
+    # verify exception propagates through the decorator
+    with pytest.raises(ValueError, match="Negative amount"):
+        payment(-1)
+
+
+def test_metrics_decorator_async_propagates_exception():
+    @monitor(metric_name="payment_async_error_test")
+    async def payment(amount: float):
+        if amount < 0:
+            raise ValueError("Negative amount")
+        return "Success"
+
+    # verify exception propagates through the async decorator
+    with pytest.raises(ValueError, match="Negative amount"):
+        asyncio.run(payment(-1))
+
+
+def test_metrics_decorator_warns_on_generator_function():
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+
+        @monitor(metric_name="gen_warning_test")
+        def my_generator():  # pyright: ignore[reportUnusedFunction]
+            yield 1
+            yield 2
+
+        # verify UserWarning was issued
+        assert len(w) == 1
+        assert issubclass(w[0].category, UserWarning)
+        assert "generator function" in str(w[0].message)
+
+
+def test_metrics_builder_with_isolated_registry(fresh_registry):  # pyright: ignore[reportMissingParameterType, reportUnknownParameterType]
+    # using isolated registry prevents global pollution
+    builder = MetricBuilder(
+        name="isolated_counter",
+        documentation="test",
+        registry=fresh_registry,  # pyright: ignore[reportUnknownArgumentType]
+    )
+    counter = builder.counter()
+    assert isinstance(counter, Counter)
+
+    # verify the metric is in our isolated registry, not the global one
+    counter.inc()
+    value = fresh_registry.get_sample_value("notiq_isolated_counter_total")
+    assert value == 1.0

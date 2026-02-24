@@ -1,5 +1,4 @@
 import json
-from unittest.mock import patch
 
 import pytest
 from celery import Celery, Task
@@ -7,31 +6,13 @@ from celery.schedules import crontab
 from fakeredis import FakeStrictRedis
 
 from notiq import celery_app, notiq_scheduler, notiq_task, notiq_unscheduler
-from notiq.utils.exceptions import SchedulerValidationError
+from notiq.utils.exceptions import SchedulerValidationError, TaskNameRequiredError
 
+from .conftest import SCHEDULER_PARAM_NAMES, SCHEDULER_PARAMS
 
-@pytest.fixture(autouse=True)
-def test_app():
-    celery_app.conf.update(
-        task_always_eager=True,  # Runs tasks immediately (no worker)
-        task_eager_propagates=True,  # Raises exceptions in the test
-        redbeat_redis_url="redis://fake",  # Dummy URL
-    )
-    return celery_app
-
-
-@pytest.fixture
-def fake_redis():
-    """Provide a shared FakeStrictRedis instance for tests."""
-    return FakeStrictRedis()
-
-
-@pytest.fixture(autouse=True)
-def mock_redis(fake_redis: FakeStrictRedis):
-    # This prevents RedBeat from trying to connect to a real Redis server
-    with patch("redbeat.schedulers.get_redis") as mock_get:
-        mock_get.return_value = fake_redis
-        yield mock_get
+# ---------------------------------------------------------------------------
+# notiq_task tests
+# ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -69,13 +50,26 @@ def test_notiq_task_with_background_task_logic(
         return x + y
 
     # This runs synchronously because of task_always_eager
-    # testing is possible with starting the worker
     result = add.delay(x, y)
 
     # verify decorated function returns the expected data
     assert result.get() == expected
     # verify if task was successfully created
     assert result.successful()
+
+
+def test_notiq_task_without_name():
+    """Verify TaskNameRequiredError is raised when no name is provided."""
+    with pytest.raises(TaskNameRequiredError):
+
+        @notiq_task()
+        def unnamed_task(self: Task):  # pyright: ignore[reportUnusedFunction]
+            return "should fail"
+
+
+# ---------------------------------------------------------------------------
+# notiq_scheduler tests
+# ---------------------------------------------------------------------------
 
 
 def test_notiq_scheduler():
@@ -99,50 +93,7 @@ def test_notiq_scheduler():
     assert entry.app == celery_app
 
 
-@pytest.mark.parametrize(
-    "task_name, task, args, kwargs, schedule, options",
-    [
-        (
-            "notiq.test_add_1",
-            "notiq.tasks.send_email",
-            ["test@me.com"],
-            {"subject": "Hi"},
-            crontab(
-                minute="1",
-                hour="10",
-                day_of_month="30",
-                day_of_week="6",
-            ),
-            {"queue": "priority_queue"},
-        ),
-        (
-            "notiq.test_add_2",
-            "notiq.tasks.send_email",
-            ["test@me.com"],
-            {"subject": "Hi"},
-            crontab(
-                minute="1",
-                hour="1",
-                day_of_month="1",
-                day_of_week="1",
-            ),
-            {"queue": "priority_queue"},
-        ),
-        (
-            "notiq.test_add_3",
-            "notiq.tasks.send_email",
-            ["test@me.com"],
-            {"subject": "Hi"},
-            crontab(
-                minute="1",
-                hour="20",
-                day_of_month="2",
-                day_of_week="6",
-            ),
-            {"queue": "priority_queue"},
-        ),
-    ],
-)
+@pytest.mark.parametrize(SCHEDULER_PARAM_NAMES, SCHEDULER_PARAMS)
 def test_notiq_scheduler_save_persists_correct_json_to_redis(
     fake_redis: FakeStrictRedis,
     test_app: Celery,
@@ -176,7 +127,7 @@ def test_notiq_scheduler_save_persists_correct_json_to_redis(
     # Decode the JSON stored by RedBeat
     decoded_data = json.loads(raw_data[b"definition"])  # pyright: ignore[reportIndexIssue, reportUnknownArgumentType]
 
-    # # Verify the structure matches Celery's expectations
+    # Verify the structure matches Celery's expectations
     assert decoded_data["name"] == task_name
     assert decoded_data["task"] == task
     assert decoded_data["args"] == args
@@ -193,50 +144,12 @@ def test_notiq_scheduler_save_persists_correct_json_to_redis(
     assert decoded_data["schedule"]["day_of_week"] == str(list(schedule.day_of_week)[0])
 
 
-@pytest.mark.parametrize(
-    "task_name, task, args, kwargs, schedule, options",
-    [
-        (
-            "notiq.test_add_1",
-            "notiq.tasks.send_email",
-            ["test@me.com"],
-            {"subject": "Hi"},
-            crontab(
-                minute="1",
-                hour="10",
-                day_of_month="30",
-                day_of_week="6",
-            ),
-            {"queue": "priority_queue"},
-        ),
-        (
-            "notiq.test_add_2",
-            "notiq.tasks.send_email",
-            ["test@me.com"],
-            {"subject": "Hi"},
-            crontab(
-                minute="1",
-                hour="1",
-                day_of_month="1",
-                day_of_week="1",
-            ),
-            {"queue": "priority_queue"},
-        ),
-        (
-            "notiq.test_add_3",
-            "notiq.tasks.send_email",
-            ["test@me.com"],
-            {"subject": "Hi"},
-            crontab(
-                minute="1",
-                hour="20",
-                day_of_month="2",
-                day_of_week="6",
-            ),
-            {"queue": "priority_queue"},
-        ),
-    ],
-)
+# ---------------------------------------------------------------------------
+# notiq_unscheduler tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(SCHEDULER_PARAM_NAMES, SCHEDULER_PARAMS)
 def test_notiq_unscheduler(
     fake_redis: FakeStrictRedis,
     test_app: Celery,
@@ -264,7 +177,7 @@ def test_notiq_unscheduler(
 
     # Fetch the raw data from our "fake" server
     raw_data = fake_redis.hgetall(redis_key)
-    # verify data is avaliable
+    # verify data is available
     assert raw_data is not None, "Data was not saved to Redis"
 
     # unschedule task
@@ -278,3 +191,55 @@ def test_notiq_unscheduler(
 def test_notiq_unscheduler_without_valid_taskname():
     with pytest.raises(SchedulerValidationError):
         notiq_unscheduler("")
+
+
+# ---------------------------------------------------------------------------
+# notiq_scheduler validation tests
+# ---------------------------------------------------------------------------
+
+
+def test_notiq_scheduler_missing_name():
+    """Verify SchedulerValidationError when name is missing."""
+    with pytest.raises(SchedulerValidationError, match="name is required"):
+        notiq_scheduler(
+            task="notiq.tasks.send_email",
+            schedule=crontab(minute="*/1"),
+        )
+
+
+def test_notiq_scheduler_empty_name():
+    """Verify SchedulerValidationError when name is empty/whitespace."""
+    with pytest.raises(SchedulerValidationError, match="name is required"):
+        notiq_scheduler(
+            name="   ",
+            task="notiq.tasks.send_email",
+            schedule=crontab(minute="*/1"),
+        )
+
+
+def test_notiq_scheduler_missing_task():
+    """Verify SchedulerValidationError when task is missing."""
+    with pytest.raises(SchedulerValidationError, match="task is required"):
+        notiq_scheduler(
+            name="test.task",
+            schedule=crontab(minute="*/1"),
+        )
+
+
+def test_notiq_scheduler_empty_task():
+    """Verify SchedulerValidationError when task is empty/whitespace."""
+    with pytest.raises(SchedulerValidationError, match="task is required"):
+        notiq_scheduler(
+            name="test.task",
+            task="   ",
+            schedule=crontab(minute="*/1"),
+        )
+
+
+def test_notiq_scheduler_missing_schedule():
+    """Verify SchedulerValidationError when schedule is missing."""
+    with pytest.raises(SchedulerValidationError, match="schedule is required"):
+        notiq_scheduler(
+            name="test.task",
+            task="notiq.tasks.send_email",
+        )

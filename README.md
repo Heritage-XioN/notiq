@@ -117,16 +117,7 @@ counter = metrics.counter("requests_total", "Total requests processed")
 
 ### Configuration
 
-setup the worker config using `NotiqConfig`
-```python
-# Configure Notiq
-NotiqConfig(
-    BROKER_URL="redis://localhost:6379/0",
-    RESULT_BACKEND="redis://localhost:6379/0",
-    task_dir="./tasks"
-)
-```
-OR Configure via environment variables or `.env` file:
+Configure via environment variables or `.env` file:
 ```env
 # prefix it with NOTIQ_
 NOTIQ_BROKER_URL=amqp://guest:guest@localhost:5672/
