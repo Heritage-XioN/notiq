@@ -26,6 +26,7 @@ dev = [
     "mypy>=1.19.1",
     "pre-commit>=4.5.1",
     "pytest>=9.0.2",
+    "pytest-cov>=7.0.0",
     "ruff>=0.14.13",
 ]
 
@@ -80,3 +81,35 @@ disable_error_code = ["attr-defined"]  # Path.walk() is Python 3.12+
 [[tool.mypy.overrides]]
 module = "notiq.config"
 disable_error_code = ["misc"]  # pydantic-settings BaseSettings typing issue
+
+
+[tool.pytest.ini_options]
+addopts = "--cov=notiq --cov-report=html"
+
+
+[tool.coverage.run]
+branch = true
+
+[tool.coverage.report]
+# Regexes for lines to exclude from consideration
+exclude_also = [
+    # Don't complain about missing debug-only code:
+    "def __repr__",
+    "if self\\.debug",
+
+    # Don't complain if tests don't hit defensive assertion code:
+    "raise AssertionError",
+    "raise NotImplementedError",
+
+    # Don't complain if non-runnable code isn't run:
+    "if 0:",
+    "if __name__ == .__main__.:",
+
+    # Don't complain about abstract methods, they aren't run:
+    "@(abc\\.)?abstractmethod",
+    ]
+
+ignore_errors = true
+
+[tool.coverage.html]
+directory = "coverage_html_report"
